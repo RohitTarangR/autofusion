@@ -23,15 +23,23 @@ router.get('/dashboard', requireSuperAdmin, async (req, res) => {
         const providersRes = await db.query('SELECT COUNT(*) FROM admin_profiles');
         const offeringsRes = await db.query('SELECT COUNT(*) FROM service_offerings');
         const clientsRes = await db.query('SELECT COUNT(*) FROM users WHERE is_staff = false AND is_superuser = false');
+        const revenueRes = await db.query(
+            `SELECT SUM(so.price_starts_at) as total_revenue
+             FROM service_offerings so
+             JOIN service_booking_items sbi ON so.id = sbi.service_id
+             JOIN service_bookings sb ON sb.id = sbi.booking_id
+             WHERE sb.is_paid = true`
+        );
 
         const stats = {
-            all_service: bookingsRes.rows.slice(0, 6),
-            all_towing: towingRes.rows.slice(0, 6),
-            total_service: bookingsRes.rows.length,
+            recent_bookings: bookingsRes.rows.slice(0, 6),
+            recent_towing: towingRes.rows.slice(0, 6),
+            total_services: bookingsRes.rows.length,
             total_towing: towingRes.rows.length,
-            total_provider: parseInt(providersRes.rows[0].count, 10),
+            total_shops: parseInt(providersRes.rows[0].count, 10),
             service_provider: parseInt(offeringsRes.rows[0].count, 10),
-            total_user: parseInt(clientsRes.rows[0].count, 10),
+            total_users: parseInt(clientsRes.rows[0].count, 10),
+            total_service_revenue: parseFloat(revenueRes.rows[0]?.total_revenue || 0)
         };
 
         res.json({ stats });
@@ -49,7 +57,7 @@ router.get('/services', requireSuperAdmin, async (req, res) => {
              LEFT JOIN admin_profiles ap ON sb.shop_id = ap.id
              ORDER BY sb.id DESC`
         );
-        res.json({ services: bookingsRes.rows });
+        res.json({ bookings: bookingsRes.rows });
     } catch (err) {
         console.error('Superadmin services error:', err);
         res.status(500).json({ error: 'Internal server error' });

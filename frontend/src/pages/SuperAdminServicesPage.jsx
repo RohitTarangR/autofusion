@@ -8,6 +8,10 @@ export default function SuperAdminServicesPage() {
     const [bookings, setBookings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('all');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [dateFilter, setDateFilter] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 10;
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [itemToDelete, setItemToDelete] = useState(null);
 
@@ -26,6 +30,10 @@ export default function SuperAdminServicesPage() {
         fetchBookings();
     }, []);
 
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filter, searchQuery, dateFilter]);
+
     const handleDeleteClick = (id) => {
         setItemToDelete(id);
         setIsDeleteModalOpen(true);
@@ -42,9 +50,32 @@ export default function SuperAdminServicesPage() {
         setItemToDelete(null);
     };
 
-    const filteredList = filter === 'all'
-        ? bookings
-        : bookings.filter(b => b.status === filter);
+    const filteredList = bookings.filter(b => {
+        const matchesStatus = filter === 'all' || b.status === filter;
+        
+        const query = searchQuery.toLowerCase();
+        const matchesSearch = !query || 
+            (b.customer_name && b.customer_name.toLowerCase().includes(query)) ||
+            (b.vehicle_info && b.vehicle_info.toLowerCase().includes(query)) ||
+            (b.shop_name && b.shop_name.toLowerCase().includes(query));
+            
+        let localDate = '';
+        if (b.preferred_date) {
+            const bDateObj = new Date(b.preferred_date);
+            const year = bDateObj.getFullYear();
+            const month = String(bDateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(bDateObj.getDate()).padStart(2, '0');
+            localDate = `${year}-${month}-${day}`;
+        }
+        const matchesDate = !dateFilter || localDate === dateFilter;
+        
+        return matchesStatus && matchesSearch && matchesDate;
+    });
+
+    const indexOfLastItem = currentPage * itemsPerPage;
+    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+    const currentItems = filteredList.slice(indexOfFirstItem, indexOfLastItem);
+    const totalPages = Math.ceil(filteredList.length / itemsPerPage);
 
     if (loading) {
         return (
@@ -66,38 +97,43 @@ export default function SuperAdminServicesPage() {
                 </div>
             </div>
 
-            {/* Filter */}
-            <div className="flex gap-2 overflow-x-auto pb-2 mb-6">
-                <button
-                    onClick={() => setFilter('all')}
-                    className={`rounded-full px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors ${filter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
-                >
-                    All ({bookings.length})
-                </button>
-                <button
-                    onClick={() => setFilter('pending')}
-                    className={`rounded-full px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors ${filter === 'pending' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
-                >
-                    Pending
-                </button>
-                <button
-                    onClick={() => setFilter('processing')}
-                    className={`rounded-full px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors ${filter === 'processing' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
-                >
-                    In Progress
-                </button>
-                <button
-                    onClick={() => setFilter('completed')}
-                    className={`rounded-full px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors ${filter === 'completed' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
-                >
-                    Completed
-                </button>
-                <button
-                    onClick={() => setFilter('cancelled')}
-                    className={`rounded-full px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors ${filter === 'cancelled' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
-                >
-                    Cancelled
-                </button>
+            {/* Filter and Search Bar */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm mb-6">
+                <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center">
+                    <div className="flex-1 flex gap-3 w-full lg:w-auto flex-col sm:flex-row">
+                        <div className="relative flex-1 max-w-md">
+                            <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                            <input
+                                type="text"
+                                placeholder="Search customer, vehicle, or workshop..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm"
+                            />
+                        </div>
+                        <div className="relative w-full sm:w-auto">
+                            <input
+                                type="date"
+                                value={dateFilter}
+                                onChange={(e) => setDateFilter(e.target.value)}
+                                className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm text-slate-700"
+                            />
+                            {dateFilter && (
+                                <button onClick={() => setDateFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 bg-white px-1">
+                                    <i className="fas fa-times"></i>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    
+                    <div className="flex gap-2 overflow-x-auto pb-2 lg:pb-0 w-full lg:w-auto" style={{ scrollbarWidth: 'none' }}>
+                        <button onClick={() => setFilter('all')} className={`whitespace-nowrap rounded-full px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors ${filter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>All ({bookings.length})</button>
+                        <button onClick={() => setFilter('pending')} className={`whitespace-nowrap rounded-full px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors ${filter === 'pending' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>Pending</button>
+                        <button onClick={() => setFilter('processing')} className={`whitespace-nowrap rounded-full px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors ${filter === 'processing' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>In Progress</button>
+                        <button onClick={() => setFilter('completed')} className={`whitespace-nowrap rounded-full px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors ${filter === 'completed' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>Completed</button>
+                        <button onClick={() => setFilter('cancelled')} className={`whitespace-nowrap rounded-full px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors ${filter === 'cancelled' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>Cancelled</button>
+                    </div>
+                </div>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
@@ -119,7 +155,7 @@ export default function SuperAdminServicesPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-sm">
-                                {filteredList.map((b) => (
+                                {currentItems.map((b) => (
                                     <tr key={b.id} className="hover:bg-slate-50/50">
                                         <td className="py-3 px-4 font-bold text-slate-900">#{b.id}</td>
                                         <td className="py-3 px-4">
@@ -153,6 +189,42 @@ export default function SuperAdminServicesPage() {
                                 ))}
                             </tbody>
                         </table>
+                        
+                        {/* Pagination Controls */}
+                        {totalPages > 1 && (
+                            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 px-4 py-3 bg-slate-50 border-t border-slate-200 rounded-b-xl">
+                                <div className="text-sm text-slate-500">
+                                    Showing <span className="font-semibold text-slate-900">{indexOfFirstItem + 1}</span> to <span className="font-semibold text-slate-900">{Math.min(indexOfLastItem, filteredList.length)}</span> of <span className="font-semibold text-slate-900">{filteredList.length}</span> entries
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                        disabled={currentPage === 1}
+                                        className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-colors ${currentPage === 1 ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+                                    >
+                                        Previous
+                                    </button>
+                                    <div className="flex items-center gap-1">
+                                        {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                                            <button
+                                                key={page}
+                                                onClick={() => setCurrentPage(page)}
+                                                className={`w-8 h-8 flex items-center justify-center text-sm font-semibold rounded-lg transition-colors ${currentPage === page ? 'bg-blue-600 text-white' : 'hover:bg-slate-100 text-slate-700'}`}
+                                            >
+                                                {page}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                        disabled={currentPage === totalPages}
+                                        className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-colors ${currentPage === totalPages ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

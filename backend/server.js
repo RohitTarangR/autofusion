@@ -10,6 +10,12 @@ const adminRoutes = require('./routes/admin');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const db = require('./db');
+
+// Auto-migrate
+db.query("ALTER TABLE service_bookings ADD COLUMN detailed_status TEXT DEFAULT ''")
+    .then(() => console.log('Added detailed_status column'))
+    .catch((err) => {}); // Ignore error if column already exists
 
 app.use(cors());
 app.use(express.json());

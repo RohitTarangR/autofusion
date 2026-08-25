@@ -21,6 +21,7 @@ export default function ShopServiceOrders() {
         customer_email: '',
         vehicle_info: '',
         is_paid: false,
+        detailed_status: '',
     });
     const [saving, setSaving] = useState(false);
 
@@ -96,6 +97,7 @@ export default function ShopServiceOrders() {
             customer_email: b.customer_email,
             vehicle_info: b.vehicle_info,
             is_paid: b.is_paid,
+            detailed_status: b.detailed_status || '',
         });
         setIsEditModalOpen(true);
     };
@@ -289,6 +291,17 @@ export default function ShopServiceOrders() {
                                     <option value="completed" disabled={isStatusDisabled(selectedBooking?.status, 'completed')}>Completed & Ready for Handover</option>
                                     <option value="cancelled" disabled={isStatusDisabled(selectedBooking?.status, 'cancelled')}>Cancelled</option>
                                 </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Current Work Activity (Visible to Customer)</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Car is washing now, Oil changing..."
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 text-sm"
+                                    value={editForm.detailed_status}
+                                    onChange={(e) => setEditForm({ ...editForm, detailed_status: e.target.value })}
+                                />
                             </div>
 
                             <div>

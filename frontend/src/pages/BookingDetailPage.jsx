@@ -106,6 +106,18 @@ export default function BookingDetailPage() {
                 </div>
             </div>
 
+            {/* Detailed Status Live Update Banner */}
+            {booking.detailed_status && (
+                <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-5 mb-8 shadow-sm flex items-start gap-4">
+                    <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                        <i className="fas fa-info-circle text-lg"></i>
+                    </div>
+                    <div>
+                        <h3 className="text-xs font-bold text-indigo-900 uppercase tracking-wider mb-1">Live Update from Workshop</h3>
+                        <p className="text-indigo-800 font-semibold">{booking.detailed_status}</p>
+                    </div>
+                </div>
+            )}
 
             {/* Details Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">

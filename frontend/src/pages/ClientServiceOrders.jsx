@@ -150,7 +150,14 @@ export default function ClientServiceOrders() {
                                                 {b.is_paid ? 'Paid' : 'Unpaid'}
                                             </span>
                                         </td>
-                                        <td className="py-3 px-4"><StatusBadge status={b.status} /></td>
+                                        <td className="py-3 px-4">
+                                            <StatusBadge status={b.status} />
+                                            {b.detailed_status && (
+                                                <div className="text-xs text-indigo-600 mt-1.5 font-medium bg-indigo-50 border border-indigo-100 px-2 py-1 rounded w-max max-w-xs truncate" title={b.detailed_status}>
+                                                    <i className="fas fa-info-circle mr-1"></i> {b.detailed_status}
+                                                </div>
+                                            )}
+                                        </td>
                                         <td className="py-3 px-4">
                                             <Link
                                                 to={`/bookings/${b.id}`}

@@ -214,7 +214,10 @@ router.get('/service-orders', requireStaff, async (req, res) => {
             [shop.id]
         );
 
-        const bookings = bookingsRes.rows;
+        const bookings = bookingsRes.rows.map(b => {
+            const cost = b.services.reduce((sum, s) => sum + parseFloat(s.price_starts_at || 0), 0);
+            return { ...b, total_cost: cost };
+        });
         const counts = {
             total: bookings.length,
             pending: bookings.filter(b => b.status === 'pending').length,
@@ -232,7 +235,7 @@ router.get('/service-orders', requireStaff, async (req, res) => {
 
 router.put('/service-orders/:id', requireStaff, async (req, res) => {
     try {
-        const { status, customer_name, customer_phone, customer_email, vehicle_info, is_paid, send_payment_link } = req.body;
+        const { status, customer_name, customer_phone, customer_email, vehicle_info, is_paid, send_payment_link, detailed_status } = req.body;
 
         const currentRes = await db.query('SELECT * FROM service_bookings WHERE id = $1', [req.params.id]);
         if (currentRes.rows.length === 0) return res.status(404).json({ error: 'Booking not found' });
@@ -254,8 +257,8 @@ router.put('/service-orders/:id', requireStaff, async (req, res) => {
 
         await db.query(
             `UPDATE service_bookings
-             SET status = $1, customer_name = $2, customer_phone = $3, customer_email = $4, vehicle_info = $5, is_paid = $6
-             WHERE id = $7`,
+             SET status = $1, customer_name = $2, customer_phone = $3, customer_email = $4, vehicle_info = $5, is_paid = $6, detailed_status = $7
+             WHERE id = $8`,
             [
                 status !== undefined ? status : current.status,
                 customer_name !== undefined ? customer_name : current.customer_name,
@@ -263,6 +266,7 @@ router.put('/service-orders/:id', requireStaff, async (req, res) => {
                 customer_email !== undefined ? customer_email : current.customer_email,
                 vehicle_info !== undefined ? vehicle_info : current.vehicle_info,
                 is_paid !== undefined ? is_paid : current.is_paid,
+                detailed_status !== undefined ? detailed_status : current.detailed_status,
                 req.params.id
             ]
         );
