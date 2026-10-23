@@ -32,8 +32,8 @@ export default function Navbar() {
 
                 {/* Nav Links based on Role */}
                 <div className="flex flex-col gap-2 flex-1 overflow-y-auto w-full pr-1 custom-scrollbar">
-                    {/* Guest & Client Links */}
-                    {(isGuest || isClient) && (
+                    {/* Guest Links */}
+                    {isGuest && (
                         <>
                             <NavLink to="/services-info" className={linkClasses}>
                                 <i className="fas fa-wrench w-5 text-center"></i> Solutions
@@ -56,6 +56,38 @@ export default function Navbar() {
                             </NavLink>
                         </>
                     )}
+
+                    {/* Client Links */}
+                    {isClient && (
+                        <>
+                            <NavLink to="/dashboard" className={linkClasses}>
+                                <i className="fas fa-th-large w-5 text-center"></i> Dashboard
+                            </NavLink>
+                            <NavLink to="/garage" className={linkClasses}>
+                                <i className="fas fa-warehouse w-5 text-center text-blue-600"></i> My Garage
+                            </NavLink>
+                            <NavLink to="/service-orders" className={linkClasses}>
+                                <i className="fas fa-tools w-5 text-center"></i> Service Orders
+                            </NavLink>
+                            <NavLink to="/towing-orders" className={linkClasses}>
+                                <i className="fas fa-truck-pickup w-5 text-center"></i> Towing Orders
+                            </NavLink>
+                            <NavLink to="/services-info" className={linkClasses}>
+                                <i className="fas fa-wrench w-5 text-center"></i> Solutions
+                            </NavLink>
+                            <NavLink
+                                to="/towing-request"
+                                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 hover:text-red-700 transition-colors w-full"
+                            >
+                                <div className="relative flex items-center justify-center">
+                                    <span className="absolute w-2 h-2 rounded-full bg-red-500 animate-ping -left-1 -top-1"></span>
+                                    <i className="fas fa-truck-pickup w-5 text-center"></i>
+                                </div>
+                                Emergency Towing
+                            </NavLink>
+                        </>
+                    )}
+
 
                     {/* Shop Admin (Staff) Links */}
                     {isStaff && (

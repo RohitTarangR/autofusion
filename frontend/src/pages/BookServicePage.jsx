@@ -15,12 +15,14 @@ export default function BookServicePage() {
     const [services, setServices] = useState([]);
     const [shop, setShop] = useState(null);
     const [selectedServiceIds, setSelectedServiceIds] = useState([]);
+    const [myVehicles, setMyVehicles] = useState([]);
 
     const [formData, setFormData] = useState({
         customer_name: user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username : '',
-        customer_phone: '',
+        customer_phone: user?.phone || '',
         customer_email: user?.email || '',
         vehicle_info: '',
+        vehicle_id: null,
         preferred_date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
         preferred_time: '10:00',
         additional_notes: '',
@@ -36,12 +38,42 @@ export default function BookServicePage() {
     const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
 
     useEffect(() => {
-        const fetchServices = async () => {
+        const fetchInitialData = async () => {
             try {
-                const res = await api.get('/portal/services');
-                const list = res.data.services || [];
+                const [servRes, vRes, profileRes] = await Promise.all([
+                    api.get('/portal/services'),
+                    api.get('/client/vehicles').catch(() => ({ data: { vehicles: [] } })),
+                    api.get('/client/profile').catch(() => ({ data: {} }))
+                ]);
+
+                const list = servRes.data.services || [];
                 setServices(list);
-                setShop(res.data.shop || null);
+                setShop(servRes.data.shop || null);
+
+                const vList = vRes.data?.vehicles || [];
+                setMyVehicles(vList);
+
+                // Auto-fill phone from profile if not yet set
+                const userPhone = profileRes.data?.user?.phone || user?.phone;
+                if (userPhone) {
+                    setFormData(prev => ({
+                        ...prev,
+                        customer_phone: prev.customer_phone || userPhone
+                    }));
+                }
+
+                // Auto-fill selected or primary vehicle if present and not set
+                const preselectedVehicleId = searchParams.get('vehicle_id');
+                const chosenV = (preselectedVehicleId && vList.find(v => String(v.id) === String(preselectedVehicleId)))
+                    || vList.find(v => v.is_primary)
+                    || vList[0];
+                if (chosenV) {
+                    setFormData(prev => ({
+                        ...prev,
+                        vehicle_info: `${chosenV.year} ${chosenV.make} ${chosenV.model} - ${chosenV.license_plate}`,
+                        vehicle_id: chosenV.id
+                    }));
+                }
 
                 if (preselectedServiceId) {
                     const parsedId = parseInt(preselectedServiceId, 10);
@@ -57,8 +89,9 @@ export default function BookServicePage() {
                 setLoading(false);
             }
         };
-        fetchServices();
+        fetchInitialData();
     }, [preselectedServiceId]);
+
 
     const generateTimeSlots = () => {
         if (!shop) return [];
@@ -267,6 +300,48 @@ export default function BookServicePage() {
                         2. Customer & Vehicle Information
                     </h3>
 
+                    {/* Quick Select From My Garage */}
+                    {myVehicles.length > 0 && (
+                        <div className="mb-5 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+                            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2.5 flex items-center justify-between">
+                                <span className="flex items-center gap-1.5 text-slate-800">
+                                    <i className="fas fa-warehouse text-blue-600"></i> Quick Select From My Garage
+                                </span>
+                                <span className="text-[11px] text-blue-600 font-semibold">{myVehicles.length} cars registered</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {myVehicles.map(v => (
+                                    <button
+                                        type="button"
+                                        key={v.id}
+                                        onClick={() => {
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                vehicle_info: `${v.year} ${v.make} ${v.model} - ${v.license_plate}`,
+                                                vehicle_id: v.id
+                                            }));
+                                        }}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                                            formData.vehicle_id === v.id
+                                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                                : 'bg-white text-slate-700 border-slate-300 hover:border-blue-400'
+                                        }`}
+                                    >
+                                        <i className="fas fa-car text-[10px]"></i>
+                                        <span className="font-mono">{v.license_plate}</span> ({v.make} {v.model})
+                                    </button>
+                                ))}
+                                <button
+                                    type="button"
+                                    onClick={() => setFormData(prev => ({ ...prev, vehicle_info: '', vehicle_id: null }))}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-800 border border-dashed border-slate-300 hover:border-slate-400 bg-white"
+                                >
+                                    + Enter custom vehicle
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                         <div>
                             <label className="block text-sm font-semibold text-slate-700 mb-1">Full Name</label>
@@ -280,15 +355,24 @@ export default function BookServicePage() {
                         </div>
 
                         <div>
-                            <label className="block text-sm font-semibold text-slate-700 mb-1">Phone Number</label>
-                            <input
-                                type="tel"
-                                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
-                                placeholder="9876543210"
-                                value={formData.customer_phone}
-                                onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
-                                required
-                            />
+                            <div className="flex justify-between items-center mb-1">
+                                <label className="block text-sm font-semibold text-slate-700">Phone Number</label>
+                                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">Editable</span>
+                            </div>
+                            <div className="relative">
+                                <input
+                                    type="tel"
+                                    className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 transition-all font-medium"
+                                    placeholder="e.g. 9876543210"
+                                    value={formData.customer_phone}
+                                    onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
+                                    required
+                                />
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                    <i className="fas fa-phone text-xs"></i>
+                                </div>
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-1">Pre-filled from your profile. You can edit this number for this order.</p>
                         </div>
 
                         <div>
@@ -310,7 +394,7 @@ export default function BookServicePage() {
                             className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
                             placeholder="e.g. Honda City 2022 - GJ01 AB 1234"
                             value={formData.vehicle_info}
-                            onChange={(e) => setFormData({ ...formData, vehicle_info: e.target.value })}
+                            onChange={(e) => setFormData({ ...formData, vehicle_info: e.target.value, vehicle_id: null })}
                             required
                         />
                     </div>
@@ -322,6 +406,24 @@ export default function BookServicePage() {
                         <i className="fas fa-clock text-blue-600 mr-2"></i>
                         3. Schedule Slot & Payment Method
                     </h3>
+
+                    {/* Workshop Capacity & Rating Banner */}
+                    {shop && (
+                        <div className="mb-5 p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 text-xs text-blue-950 flex flex-wrap justify-between items-center gap-2">
+                            <div className="flex items-center gap-2">
+                                <i className="fas fa-calendar-check text-blue-600 text-base"></i>
+                                <div>
+                                    <span className="font-bold">Slot Capacity:</span> Up to <strong>{shop.max_concurrent_bookings || 3} vehicles</strong> per window · <span className="font-bold">Closed on:</span> <strong>{shop.closed_days || 'Sunday'}s</strong>
+                                </div>
+                            </div>
+                            {shop.avg_rating > 0 && (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-extrabold text-xs">
+                                    <i className="fas fa-star text-amber-400"></i> {shop.avg_rating} ({shop.review_count} ratings)
+                                </span>
+                            )}
+                        </div>
+                    )}
+
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                         <div>

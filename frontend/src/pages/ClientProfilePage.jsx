@@ -9,6 +9,7 @@ export default function ClientProfilePage() {
         first_name: '',
         last_name: '',
         email: '',
+        phone: '',
     });
     const [shops, setShops] = useState([]);
     const [selectedShopId, setSelectedShopId] = useState('');
@@ -23,6 +24,7 @@ export default function ClientProfilePage() {
                     first_name: res.data.user?.first_name || '',
                     last_name: res.data.user?.last_name || '',
                     email: res.data.user?.email || '',
+                    phone: res.data.user?.phone || '',
                 });
                 setShops(res.data.shops || []);
                 setSelectedShopId(res.data.selected_shop_id || '');
@@ -103,15 +105,27 @@ export default function ClientProfilePage() {
                         </div>
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-1">Email Address</label>
-                        <input
-                            type="email"
-                            className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
-                            value={profileData.email}
-                            onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
-                            required
-                        />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Email Address</label>
+                            <input
+                                type="email"
+                                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
+                                value={profileData.email}
+                                onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
+                                required
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Phone Number</label>
+                            <input
+                                type="tel"
+                                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
+                                placeholder="e.g. 9876543210"
+                                value={profileData.phone}
+                                onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
+                            />
+                        </div>
                     </div>
 
                     <div className="pt-6 border-t border-slate-200">
@@ -130,23 +144,34 @@ export default function ClientProfilePage() {
                             <option value="">-- Choose a Service Workshop Hub --</option>
                             {shops.map((shop) => (
                                 <option key={shop.id} value={shop.id}>
-                                    {shop.shop_name} ({shop.city} - {shop.shop_address})
+                                    {shop.shop_name} ({shop.city}) {shop.avg_rating > 0 ? `· ★ ${shop.avg_rating} (${shop.review_count})` : ''}
                                 </option>
                             ))}
                         </select>
                     </div>
 
                     {currentShop && (
-                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 space-y-1">
-                            <p className="font-bold text-slate-900 flex items-center mb-2">
-                                <i className="fas fa-info-circle text-blue-600 mr-2"></i>
-                                Workshop Hub Details:
-                            </p>
-                            <p><strong>Shop Name:</strong> {currentShop.shop_name}</p>
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 space-y-1.5">
+                            <div className="flex justify-between items-center mb-2">
+                                <p className="font-bold text-slate-900 flex items-center">
+                                    <i className="fas fa-store text-blue-600 mr-2"></i>
+                                    {currentShop.shop_name}
+                                </p>
+                                {currentShop.avg_rating > 0 && (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                        <i className="fas fa-star text-amber-500"></i> {currentShop.avg_rating} ({currentShop.review_count} reviews)
+                                    </span>
+                                )}
+                            </div>
                             <p><strong>Address:</strong> {currentShop.shop_address}, {currentShop.city}</p>
                             <p><strong>Phone:</strong> {currentShop.phone_number}</p>
+                            <div className="pt-2 border-t border-slate-200/60 flex flex-wrap gap-4 text-xs text-slate-500">
+                                <span><i className="fas fa-car mr-1 text-slate-400"></i> Max <strong>{currentShop.max_concurrent_bookings || 3} cars</strong> per slot</span>
+                                <span><i className="fas fa-calendar-times mr-1 text-slate-400"></i> Closed on <strong>{currentShop.closed_days || 'Sunday'}s</strong></span>
+                            </div>
                         </div>
                     )}
+
 
                     <button
                         type="submit"

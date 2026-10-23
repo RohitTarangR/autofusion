@@ -48,11 +48,19 @@ router.get('/profile', requireAuth, async (req, res) => {
         const userId = req.user.id;
 
         const userRes = await db.query(
-            'SELECT id, username, email, first_name, last_name FROM users WHERE id = $1',
+            'SELECT id, username, email, first_name, last_name, COALESCE(phone, \'\') as phone FROM users WHERE id = $1',
             [userId]
         );
 
-        const shopsRes = await db.query('SELECT * FROM admin_profiles ORDER BY shop_name ASC');
+        const shopsRes = await db.query(
+            `SELECT ap.*,
+                    COALESCE(ROUND(AVG(wr.rating)::numeric, 1), 0.0) as avg_rating,
+                    COUNT(wr.id)::int as review_count
+             FROM admin_profiles ap
+             LEFT JOIN workshop_reviews wr ON ap.id = wr.shop_id
+             GROUP BY ap.id
+             ORDER BY ap.shop_name ASC`
+        );
 
         const selectedRes = await db.query(
             'SELECT select_shop_id FROM select_shops WHERE user_id = $1',
@@ -76,11 +84,11 @@ router.get('/profile', requireAuth, async (req, res) => {
 router.post('/profile', requireAuth, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { first_name, last_name, email } = req.body;
+        const { first_name, last_name, email, phone } = req.body;
 
         await db.query(
-            'UPDATE users SET first_name = $1, last_name = $2, email = $3 WHERE id = $4',
-            [first_name || '', last_name || '', email, userId]
+            'UPDATE users SET first_name = $1, last_name = $2, email = $3, phone = $4 WHERE id = $5',
+            [first_name || '', last_name || '', email, phone || '', userId]
         );
 
         res.json({ message: 'Profile updated successfully' });
@@ -121,7 +129,11 @@ router.get('/service-orders', requireAuth, async (req, res) => {
 
         const bookingsRes = await db.query(
             `SELECT sb.*, ap.shop_name,
-                    COALESCE(json_agg(json_build_object('id', so.id, 'title', so.title, 'price_starts_at', so.price_starts_at)) FILTER (WHERE so.id IS NOT NULL), '[]') as services
+                    COALESCE(json_agg(json_build_object(
+                        'id', so.id, 
+                        'title', so.title, 
+                        'price_starts_at', COALESCE(sbi.price_at_booking, so.price_starts_at)
+                    )) FILTER (WHERE so.id IS NOT NULL), '[]') as services
              FROM service_bookings sb
              LEFT JOIN admin_profiles ap ON sb.shop_id = ap.id
              LEFT JOIN service_booking_items sbi ON sb.id = sbi.booking_id
@@ -132,7 +144,12 @@ router.get('/service-orders', requireAuth, async (req, res) => {
             [userId]
         );
 
-        const bookings = bookingsRes.rows;
+        const bookings = bookingsRes.rows.map(b => {
+            const cost = b.total_amount != null 
+                ? parseFloat(b.total_amount) 
+                : b.services.reduce((sum, s) => sum + parseFloat(s.price_starts_at || 0), 0);
+            return { ...b, total_cost: cost };
+        });
 
         const counts = {
             pending: bookings.filter(b => b.status === 'pending').length,
@@ -143,6 +160,7 @@ router.get('/service-orders', requireAuth, async (req, res) => {
         };
 
         res.json({ bookings, counts });
+
     } catch (err) {
         console.error('Client service orders error:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -177,4 +195,188 @@ router.get('/towing-orders', requireAuth, async (req, res) => {
     }
 });
 
+// ==========================================
+// MY GARAGE & DIGITAL SERVICE PASSPORT
+// ==========================================
+
+// GET /api/client/vehicles - List all vehicles for the user
+router.get('/vehicles', requireAuth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const vehiclesRes = await db.query(
+            `SELECT v.*,
+                    COUNT(sb.id)::int as service_count,
+                    MAX(sb.preferred_date) as last_service_date
+             FROM client_vehicles v
+             LEFT JOIN service_bookings sb ON v.id = sb.vehicle_id AND sb.status = 'completed'
+             WHERE v.user_id = $1
+             GROUP BY v.id
+             ORDER BY v.is_primary DESC, v.id DESC`,
+            [userId]
+        );
+        res.json({ vehicles: vehiclesRes.rows });
+    } catch (err) {
+        console.error('Fetch vehicles error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// POST /api/client/vehicles - Add a new vehicle to My Garage
+router.post('/vehicles', requireAuth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { make, model, year, license_plate, vin, fuel_type, odometer_km, is_primary } = req.body;
+
+        if (!make || !model || !license_plate) {
+            return res.status(400).json({ error: 'Make, model, and license plate number are required' });
+        }
+
+        const countRes = await db.query('SELECT COUNT(*) FROM client_vehicles WHERE user_id = $1', [userId]);
+        const isFirst = parseInt(countRes.rows[0].count, 10) === 0;
+        const setPrimary = is_primary || isFirst;
+
+        if (setPrimary) {
+            await db.query('UPDATE client_vehicles SET is_primary = false WHERE user_id = $1', [userId]);
+        }
+
+        const newV = await db.query(
+            `INSERT INTO client_vehicles (user_id, make, model, year, license_plate, vin, fuel_type, odometer_km, is_primary)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+            [
+                userId,
+                make.trim(),
+                model.trim(),
+                parseInt(year, 10) || new Date().getFullYear(),
+                license_plate.toUpperCase().trim(),
+                (vin || '').toUpperCase().trim(),
+                fuel_type || 'Petrol',
+                parseInt(odometer_km, 10) || 0,
+                setPrimary
+            ]
+        );
+
+        res.status(201).json({ message: 'Vehicle added to your Garage!', vehicle: newV.rows[0] });
+    } catch (err) {
+        console.error('Add vehicle error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// PUT /api/client/vehicles/:id - Update vehicle details
+router.put('/vehicles/:id', requireAuth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const vehicleId = req.params.id;
+        const { make, model, year, license_plate, vin, fuel_type, odometer_km, is_primary } = req.body;
+
+        const currentRes = await db.query('SELECT * FROM client_vehicles WHERE id = $1 AND user_id = $2', [vehicleId, userId]);
+        if (currentRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Vehicle not found' });
+        }
+        const current = currentRes.rows[0];
+
+        if (is_primary && !current.is_primary) {
+            await db.query('UPDATE client_vehicles SET is_primary = false WHERE user_id = $1', [userId]);
+        }
+
+        const updated = await db.query(
+            `UPDATE client_vehicles
+             SET make = $1,
+                 model = $2,
+                 year = $3,
+                 license_plate = $4,
+                 vin = $5,
+                 fuel_type = $6,
+                 odometer_km = $7,
+                 is_primary = $8
+             WHERE id = $9 AND user_id = $10 RETURNING *`,
+            [
+                make !== undefined ? make.trim() : current.make,
+                model !== undefined ? model.trim() : current.model,
+                year !== undefined ? parseInt(year, 10) : current.year,
+                license_plate !== undefined ? license_plate.toUpperCase().trim() : current.license_plate,
+                vin !== undefined ? vin.toUpperCase().trim() : current.vin,
+                fuel_type !== undefined ? fuel_type : current.fuel_type,
+                odometer_km !== undefined ? parseInt(odometer_km, 10) : current.odometer_km,
+                is_primary !== undefined ? is_primary : current.is_primary,
+                vehicleId,
+                userId
+            ]
+        );
+
+        res.json({ message: 'Vehicle details updated successfully', vehicle: updated.rows[0] });
+    } catch (err) {
+        console.error('Update vehicle error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// DELETE /api/client/vehicles/:id - Remove vehicle
+router.delete('/vehicles/:id', requireAuth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const result = await db.query('DELETE FROM client_vehicles WHERE id = $1 AND user_id = $2 RETURNING id', [req.params.id, userId]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Vehicle not found' });
+        }
+        res.json({ message: 'Vehicle removed from your Garage' });
+    } catch (err) {
+        console.error('Delete vehicle error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// GET /api/client/vehicles/:id/passport - Digital Vehicle Service Passport
+router.get('/vehicles/:id/passport', requireAuth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const vehicleId = req.params.id;
+
+        const vRes = await db.query('SELECT * FROM client_vehicles WHERE id = $1 AND user_id = $2', [vehicleId, userId]);
+        if (vRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Vehicle not found' });
+        }
+        const vehicle = vRes.rows[0];
+
+        const historyRes = await db.query(
+            `SELECT sb.*, ap.shop_name, ap.shop_address, ap.city, ap.phone_number as shop_phone,
+                    COALESCE(json_agg(json_build_object(
+                        'id', so.id,
+                        'title', so.title,
+                        'price', COALESCE(sbi.price_at_booking, so.price_starts_at)
+                    )) FILTER (WHERE so.id IS NOT NULL), '[]') as services
+             FROM service_bookings sb
+             LEFT JOIN admin_profiles ap ON sb.shop_id = ap.id
+             LEFT JOIN service_booking_items sbi ON sb.id = sbi.booking_id
+             LEFT JOIN service_offerings so ON sbi.service_id = so.id
+             WHERE (sb.vehicle_id = $1 OR (sb.user_id = $2 AND LOWER(sb.vehicle_info) LIKE LOWER('%' || $3 || '%')))
+               AND sb.status = 'completed'
+             GROUP BY sb.id, ap.shop_name, ap.shop_address, ap.city, ap.phone_number
+             ORDER BY sb.preferred_date DESC, sb.id DESC`,
+            [vehicleId, userId, vehicle.license_plate]
+        );
+
+        const history = historyRes.rows.map(b => ({
+            ...b,
+            total_cost: b.total_amount != null ? parseFloat(b.total_amount) : b.services.reduce((acc, s) => acc + parseFloat(s.price || 0), 0)
+        }));
+
+        res.json({
+            vehicle,
+            history,
+            certified_passport: {
+                passport_id: `AF-PASS-${vehicle.id}-${vehicle.license_plate.replace(/[^A-Za-z0-9]/g, '')}`,
+                status: 'AutoFusion Certified Maintenance Record',
+                verified_services_count: history.length,
+                last_verified_odometer: history[0]?.odometer_at_service || vehicle.odometer_km,
+                resale_readiness_score: Math.min(100, Math.max(65, 65 + history.length * 7))
+            }
+        });
+    } catch (err) {
+        console.error('Fetch vehicle passport error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 module.exports = router;
+

@@ -10,12 +10,15 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import ForgetPasswordPage from './pages/ForgetPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import AboutUsPage from './pages/AboutUsPage';
 import ContactUsPage from './pages/ContactUsPage';
 import ServicesInfoPage from './pages/ServicesInfoPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 // Client Pages
 import ClientDashboard from './pages/ClientDashboard';
+import ClientGaragePage from './pages/ClientGaragePage';
 import ClientProfilePage from './pages/ClientProfilePage';
 import ClientServiceOrders from './pages/ClientServiceOrders';
 import BookServicePage from './pages/BookServicePage';
@@ -23,6 +26,7 @@ import BookingDetailPage from './pages/BookingDetailPage';
 import RequestTowingPage from './pages/RequestTowingPage';
 import ClientTowingOrders from './pages/ClientTowingOrders';
 import TowingDetailPage from './pages/TowingDetailPage';
+
 
 // Shop Admin Pages
 import ShopDashboard from './pages/ShopDashboard';
@@ -79,14 +83,17 @@ function MainApp() {
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/signup" element={<SignupPage />} />
                         <Route path="/forget-password" element={<ForgetPasswordPage />} />
+                        <Route path="/reset-password" element={<ResetPasswordPage />} />
                         <Route path="/about" element={<AboutUsPage />} />
                         <Route path="/contact" element={<ContactUsPage />} />
                         <Route path="/services-info" element={<ServicesInfoPage />} />
 
                         {/* Client Protected Routes */}
                         <Route path="/dashboard" element={<ProtectedRoute><ClientDashboard /></ProtectedRoute>} />
+                        <Route path="/garage" element={<ProtectedRoute><ClientGaragePage /></ProtectedRoute>} />
                         <Route path="/profile" element={<ProtectedRoute><ClientProfilePage /></ProtectedRoute>} />
                         <Route path="/service-orders" element={<ProtectedRoute><ClientServiceOrders /></ProtectedRoute>} />
+
                         <Route path="/book-service" element={<ProtectedRoute><BookServicePage /></ProtectedRoute>} />
                         <Route path="/bookings/:id" element={<ProtectedRoute><BookingDetailPage /></ProtectedRoute>} />
                         <Route path="/towing-request" element={<ProtectedRoute><RequestTowingPage /></ProtectedRoute>} />
@@ -108,8 +115,8 @@ function MainApp() {
                         <Route path="/admin/providers" element={<ProtectedRoute allowSuperAdmin={true}><SuperAdminProvidersPage /></ProtectedRoute>} />
                         <Route path="/admin/add-provider" element={<ProtectedRoute allowSuperAdmin={true}><SuperAdminAddProviderPage /></ProtectedRoute>} />
 
-                        {/* Fallback */}
-                        <Route path="*" element={<Navigate to="/" replace />} />
+                        {/* Fallback 404 Route */}
+                        <Route path="*" element={<NotFoundPage />} />
                     </Routes>
                 </main>
             </div>

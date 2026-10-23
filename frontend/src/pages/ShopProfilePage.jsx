@@ -248,14 +248,150 @@ export default function ShopProfilePage() {
                         </div>
                     </div>
 
+                    <div className="pt-4 border-t border-slate-200">
+                        <h4 className="text-sm font-bold text-slate-900 mb-3 flex items-center">
+
+                            <i className="fas fa-sliders-h text-blue-600 mr-2"></i>
+                            Capacity & Overbooking Prevention
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Max Concurrent Cars per Slot</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="20"
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 text-sm font-bold"
+                                    value={shop.max_concurrent_bookings || 3}
+                                    onChange={(e) => setShop({ ...shop, max_concurrent_bookings: e.target.value })}
+                                    required
+                                />
+                                <span className="text-[11px] text-slate-400 mt-1 block">Prevents booking when garage bays are full</span>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Turnaround Window</label>
+                                <select
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 text-sm"
+                                    value={shop.slot_duration_minutes || 120}
+                                    onChange={(e) => setShop({ ...shop, slot_duration_minutes: e.target.value })}
+                                >
+                                    <option value="60">60 Minutes (1 Hour)</option>
+                                    <option value="90">90 Minutes (1.5 Hours)</option>
+                                    <option value="120">120 Minutes (2 Hours)</option>
+                                    <option value="180">180 Minutes (3 Hours)</option>
+                                </select>
+                                <span className="text-[11px] text-slate-400 mt-1 block">Standard service duration</span>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Weekly Closed Days</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Sunday or Sunday, Saturday"
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 text-sm"
+                                    value={shop.closed_days || 'Sunday'}
+                                    onChange={(e) => setShop({ ...shop, closed_days: e.target.value })}
+                                />
+                                <span className="text-[11px] text-slate-400 mt-1 block">Days customers cannot book</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Towing Rates & Dispatch Settings */}
+                    <div className="pt-4 border-t border-slate-200">
+                        <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-sm font-bold text-slate-900 flex items-center">
+                                <i className="fas fa-truck-pickup text-red-600 mr-2"></i>
+                                Roadside Towing Rates & GPS Dispatch Settings
+                            </h4>
+                            <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+                                <input
+                                    type="checkbox"
+                                    checked={shop.towing_service_available !== false}
+                                    onChange={(e) => setShop({ ...shop, towing_service_available: e.target.checked })}
+                                    className="rounded text-red-600 focus:ring-red-500 w-4 h-4"
+                                />
+                                Enable 24/7 Towing Dispatch
+                            </label>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Base Hookup Fee (₹)</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="10"
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-red-600 focus:ring-2 focus:ring-red-600/20 text-sm font-semibold"
+                                    value={shop.base_towing_fee !== undefined ? shop.base_towing_fee : 500}
+                                    onChange={(e) => setShop({ ...shop, base_towing_fee: e.target.value })}
+                                    required
+                                />
+                                <span className="text-[11px] text-slate-400 mt-1 block">Fixed dispatch / hookup charge</span>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Per-Kilometer Rate (₹/km)</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="5"
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-red-600 focus:ring-2 focus:ring-red-600/20 text-sm font-semibold"
+                                    value={shop.per_km_towing_rate !== undefined ? shop.per_km_towing_rate : 50}
+                                    onChange={(e) => setShop({ ...shop, per_km_towing_rate: e.target.value })}
+                                    required
+                                />
+                                <span className="text-[11px] text-slate-400 mt-1 block">Charged per km from shop to breakdown</span>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Max Towing Radius (km)</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="500"
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-red-600 focus:ring-2 focus:ring-red-600/20 text-sm font-semibold"
+                                    value={shop.max_towing_radius_km !== undefined ? shop.max_towing_radius_km : 50}
+                                    onChange={(e) => setShop({ ...shop, max_towing_radius_km: e.target.value })}
+                                    required
+                                />
+                                <span className="text-[11px] text-slate-400 mt-1 block">Service limit for towing requests</span>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Shop GPS Latitude</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. 23.052500"
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-red-600 focus:ring-2 focus:ring-red-600/20 text-sm font-mono"
+                                    value={shop.latitude || ''}
+                                    onChange={(e) => setShop({ ...shop, latitude: e.target.value })}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1">Shop GPS Longitude</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. 72.511500"
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 bg-white focus:outline-none focus:border-red-600 focus:ring-2 focus:ring-red-600/20 text-sm font-mono"
+                                    value={shop.longitude || ''}
+                                    onChange={(e) => setShop({ ...shop, longitude: e.target.value })}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
                     <button
                         type="submit"
-                        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-sm mt-2"
+                        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-sm mt-4"
                         disabled={savingProfile}
                     >
-                        {savingProfile ? <i className="fas fa-spinner fa-spin"></i> : <><i className="fas fa-save"></i> Save Shop Information</>}
+                        {savingProfile ? <i className="fas fa-spinner fa-spin"></i> : <><i className="fas fa-save"></i> Save Shop Settings</>}
                     </button>
                 </form >
+
             </div >
 
         {/* Service Offerings Management */ }

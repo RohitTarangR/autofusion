@@ -564,3 +564,115 @@ a:hover {
   background: #e2e8f0;
   color: #0f172a;
 }
+
+/* ═══════════════════════════════════════════════════
+   PRINT STYLESHEET — ISOLATED & ACCURATE PDF PRINTING
+   ═══════════════════════════════════════════════════ */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm 12mm 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Force background colors, borders, and badge styling to print accurately */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Universal print hidden elements */
+  nav,
+  aside,
+  header,
+  footer,
+  .navbar,
+  .sidebar,
+  .print\:hidden,
+  .no-print,
+  button,
+  .toast-container,
+  [role="status"] {
+    display: none !important;
+  }
+
+  /* When a printable modal is open, isolate it completely and hide the background React tree */
+  body.has-print-modal > #root {
+    display: none !important;
+  }
+
+  /* Reset modal overlay for clean paper rendering */
+  body.has-print-modal .printable-modal-overlay {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+    width: 100% !important;
+    backdrop-filter: none !important;
+    box-shadow: none !important;
+  }
+
+  body.has-print-modal .printable-modal-card {
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  /* Ensure printable targets stretch to full printable area without scroll clipping */
+  #printable-invoice,
+  #printable-passport,
+  #printable-dayend {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border: none !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+
+  /* Prevent awkward page cuts in table rows, cards, and stamp blocks */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tr,
+  .print-avoid-break,
+  .break-inside-avoid {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+}

@@ -116,8 +116,8 @@ router.get('/providers', requireSuperAdmin, async (req, res) => {
     }
 });
 
-// POST /api/admin/add-provider
-router.post('/add-provider', requireSuperAdmin, async (req, res) => {
+// POST /api/admin/add-provider and POST /api/admin/providers
+const handleAddProvider = async (req, res) => {
     try {
         const { username, email, password, full_name, shop_name, phone_number, city, shop_address } = req.body;
 
@@ -151,7 +151,11 @@ router.post('/add-provider', requireSuperAdmin, async (req, res) => {
         console.error('Superadmin add provider error:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
-});
+};
+
+router.post('/add-provider', requireSuperAdmin, handleAddProvider);
+router.post('/providers', requireSuperAdmin, handleAddProvider);
+
 
 // DELETE /api/admin/providers/:id (admin_profiles id)
 router.delete('/providers/:id', requireSuperAdmin, async (req, res) => {

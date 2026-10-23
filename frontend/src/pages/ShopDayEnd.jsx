@@ -47,7 +47,7 @@ export default function ShopDayEnd() {
                 </div>
                 <button
                     onClick={handlePrint}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold transition-colors shadow-sm"
+                    className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold transition-colors shadow-sm print:hidden"
                 >
                     <i className="fas fa-print"></i> Print Report
                 </button>

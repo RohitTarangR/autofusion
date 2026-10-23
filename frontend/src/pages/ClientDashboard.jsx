@@ -72,7 +72,13 @@ export default function ClientDashboard() {
                         Manage vehicle service requests, active towing assistance, and security passcodes.
                     </p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-3 flex-wrap">
+                    <Link
+                        to="/garage"
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 transition-colors shadow-sm"
+                    >
+                        <i className="fas fa-warehouse text-blue-600"></i> My Garage
+                    </Link>
                     <Link
                         to="/services-info"
                         className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-sm"
@@ -87,6 +93,7 @@ export default function ClientDashboard() {
                     </Link>
                 </div>
             </div>
+
 
             {/* Stat Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

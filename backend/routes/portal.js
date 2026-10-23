@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, optionalAuth } = require('../middleware/auth');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_mock_secret_key');
 const { sendOTPByEmail, sendServiceBookingEmail, sendTowingRequestEmail } = require('../utils/email');
 
@@ -11,17 +11,21 @@ function generateOtp() {
 }
 
 // GET /api/portal/services
-router.get('/services', requireAuth, async (req, res) => {
+router.get('/services', optionalAuth, async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user ? req.user.id : null;
+        let shopId = null;
 
-        // Get user's selected shop
-        const shopRes = await db.query(
-            'SELECT select_shop_id FROM select_shops WHERE user_id = $1',
-            [userId]
-        );
-
-        let shopId = shopRes.rows.length > 0 ? shopRes.rows[0].select_shop_id : null;
+        if (userId) {
+            // Get user's selected shop
+            const shopRes = await db.query(
+                'SELECT select_shop_id FROM select_shops WHERE user_id = $1',
+                [userId]
+            );
+            if (shopRes.rows.length > 0) {
+                shopId = shopRes.rows[0].select_shop_id;
+            }
+        }
 
         if (!shopId) {
             const firstShop = await db.query('SELECT id FROM admin_profiles ORDER BY id ASC LIMIT 1');
@@ -30,11 +34,21 @@ router.get('/services', requireAuth, async (req, res) => {
             }
         }
 
+
         if (!shopId) {
             return res.json({ services: [], shop: null });
         }
 
-        const shopInfo = await db.query('SELECT * FROM admin_profiles WHERE id = $1', [shopId]);
+        const shopInfo = await db.query(
+            `SELECT ap.*,
+                    COALESCE(ROUND(AVG(wr.rating)::numeric, 1), 0.0) as avg_rating,
+                    COUNT(wr.id)::int as review_count
+             FROM admin_profiles ap
+             LEFT JOIN workshop_reviews wr ON ap.id = wr.shop_id
+             WHERE ap.id = $1
+             GROUP BY ap.id`,
+            [shopId]
+        );
         const servicesRes = await db.query(
             'SELECT * FROM service_offerings WHERE shop_id = $1 AND is_active = true ORDER BY id DESC',
             [shopId]
@@ -50,6 +64,47 @@ router.get('/services', requireAuth, async (req, res) => {
     }
 });
 
+// Helper to validate workshop capacity and closed days
+async function validateSlotCapacity(shopId, preferred_date, preferred_time) {
+    if (!shopId) return null;
+
+    const shopRes = await db.query(
+        'SELECT shop_name, max_concurrent_bookings, closed_days FROM admin_profiles WHERE id = $1',
+        [shopId]
+    );
+    if (shopRes.rows.length === 0) return null;
+
+    const shop = shopRes.rows[0];
+    const maxCapacity = shop.max_concurrent_bookings || 3;
+    const closedDaysStr = (shop.closed_days || 'Sunday').toLowerCase();
+
+    // Check closed days
+    const dateObj = new Date(preferred_date + 'T00:00:00');
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const bookingDay = dayNames[dateObj.getDay()];
+
+    const closedList = closedDaysStr.split(',').map(d => d.trim().toLowerCase());
+    if (closedList.includes(bookingDay)) {
+        const capitalizedDay = bookingDay.charAt(0).toUpperCase() + bookingDay.slice(1);
+        return `${shop.shop_name} is closed on ${capitalizedDay}s. Please select an open operating day.`;
+    }
+
+    // Check concurrent bookings against capacity limit
+    const countRes = await db.query(
+        `SELECT COUNT(*)::int as count 
+         FROM service_bookings 
+         WHERE preferred_date = $1 AND preferred_time = $2 AND shop_id = $3 AND status != 'cancelled'`,
+        [preferred_date, preferred_time, shopId]
+    );
+
+    const currentCount = countRes.rows[0]?.count || 0;
+    if (currentCount >= maxCapacity) {
+        return `This time slot has reached maximum capacity (${maxCapacity} cars limit). Please select another time.`;
+    }
+
+    return null;
+}
+
 // POST /api/portal/check-timeslot
 router.post('/check-timeslot', requireAuth, async (req, res) => {
     try {
@@ -63,27 +118,18 @@ router.post('/check-timeslot', requireAuth, async (req, res) => {
         const shopRes = await db.query('SELECT select_shop_id FROM select_shops WHERE user_id = $1', [userId]);
         const shopId = shopRes.rows.length > 0 ? shopRes.rows[0].select_shop_id : null;
 
-        let timeslotQuery = `SELECT id FROM service_bookings WHERE preferred_date = $1 AND preferred_time = $2 AND status != 'cancelled'`;
-        let timeslotParams = [preferred_date, preferred_time];
-
-        if (shopId) {
-            timeslotQuery += ` AND shop_id = $3`;
-            timeslotParams.push(shopId);
-        } else {
-            timeslotQuery += ` AND shop_id IS NULL`;
+        const validationError = await validateSlotCapacity(shopId, preferred_date, preferred_time);
+        if (validationError) {
+            return res.status(400).json({ error: validationError });
         }
 
-        const existingBookingRes = await db.query(timeslotQuery, timeslotParams);
-        if (existingBookingRes.rows.length > 0) {
-            return res.status(400).json({ error: 'This time slot is already booked for the selected shop. Please choose another time.' });
-        }
-
-        res.json({ message: 'Timeslot is available' });
+        res.json({ message: 'Timeslot is available and workshop is open!' });
     } catch (err) {
         console.error('Check timeslot error:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
 
 // POST /api/portal/send-otp
 router.post('/send-otp', async (req, res) => {
@@ -116,7 +162,7 @@ router.post('/send-otp', async (req, res) => {
 router.post('/book-service', requireAuth, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { customer_name, customer_phone, customer_email, vehicle_info, preferred_date, preferred_time, additional_notes, service_ids, payment_method, otp } = req.body;
+        const { customer_name, customer_phone, customer_email, vehicle_info, vehicle_id, preferred_date, preferred_time, additional_notes, service_ids, payment_method, otp } = req.body;
 
         if (!customer_name || !customer_phone || !customer_email || !vehicle_info || !preferred_date || !preferred_time || !service_ids || service_ids.length === 0 || !otp) {
             return res.status(400).json({ error: 'All required booking fields and OTP must be provided' });
@@ -144,41 +190,44 @@ router.post('/book-service', requireAuth, async (req, res) => {
         const shopRes = await db.query('SELECT select_shop_id FROM select_shops WHERE user_id = $1', [userId]);
         const shopId = shopRes.rows.length > 0 ? shopRes.rows[0].select_shop_id : null;
 
-        // Check for timeslot collision
-        let timeslotQuery = `SELECT id FROM service_bookings WHERE preferred_date = $1 AND preferred_time = $2 AND status != 'cancelled'`;
-        let timeslotParams = [preferred_date, preferred_time];
-
-        if (shopId) {
-            timeslotQuery += ` AND shop_id = $3`;
-            timeslotParams.push(shopId);
-        } else {
-            timeslotQuery += ` AND shop_id IS NULL`;
-        }
-
-        const existingBookingRes = await db.query(timeslotQuery, timeslotParams);
-        if (existingBookingRes.rows.length > 0) {
-            return res.status(400).json({ error: 'This time slot is already booked for the selected shop. Please choose another time.' });
+        // Check workshop capacity and closed days
+        const capacityError = await validateSlotCapacity(shopId, preferred_date, preferred_time);
+        if (capacityError) {
+            return res.status(400).json({ error: capacityError });
         }
 
         const bookingRes = await db.query(
-            `INSERT INTO service_bookings (user_id, shop_id, customer_name, customer_phone, customer_email, vehicle_info, preferred_date, preferred_time, additional_notes, status, otp, otp_verified, payment_method, is_paid)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', '', true, $10, false) RETURNING *`,
-            [userId, shopId, customer_name, customer_phone, customer_email, vehicle_info, preferred_date, preferred_time, additional_notes || '', payment_method || 'cash']
+            `INSERT INTO service_bookings (user_id, shop_id, customer_name, customer_phone, customer_email, vehicle_info, vehicle_id, preferred_date, preferred_time, additional_notes, status, otp, otp_verified, payment_method, is_paid)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', '', true, $11, false) RETURNING *`,
+            [userId, shopId, customer_name, customer_phone, customer_email, vehicle_info, vehicle_id || null, preferred_date, preferred_time, additional_notes || '', payment_method || 'cash']
         );
 
         const booking = bookingRes.rows[0];
 
-        // Insert booking items
+
+        // Insert booking items with price snapshot
         let totalCost = 0;
         for (const sId of service_ids) {
-            await db.query('INSERT INTO service_booking_items (booking_id, service_id) VALUES ($1, $2)', [booking.id, sId]);
             const sRes = await db.query('SELECT price_starts_at FROM service_offerings WHERE id = $1', [sId]);
-            if (sRes.rows.length > 0) {
-                totalCost += parseFloat(sRes.rows[0].price_starts_at);
-            }
+            const price = sRes.rows.length > 0 ? parseFloat(sRes.rows[0].price_starts_at) : 0;
+            totalCost += price;
+            await db.query(
+                'INSERT INTO service_booking_items (booking_id, service_id, price_at_booking) VALUES ($1, $2, $3)', 
+                [booking.id, sId, price]
+            );
         }
 
+        await db.query('UPDATE service_bookings SET total_amount = $1 WHERE id = $2', [totalCost, booking.id]);
+
+        // Auto-save phone to user profile if user has none saved yet
+        if (userId && customer_phone) {
+            await db.query(
+                "UPDATE users SET phone = $1 WHERE id = $2 AND (phone IS NULL OR phone = '')",
+                [customer_phone, userId]
+            ).catch(() => {});
+        }
         booking.total_cost = totalCost;
+        booking.total_amount = totalCost;
 
         // Stripe Payment Intent handling if online
         let stripeData = null;
@@ -238,16 +287,20 @@ router.get('/bookings/:id', requireAuth, async (req, res) => {
         const booking = bookingRes.rows[0];
 
         const servicesRes = await db.query(
-            `SELECT so.* FROM service_booking_items sbi
+            `SELECT so.*, COALESCE(sbi.price_at_booking, so.price_starts_at) as price_at_booking 
+             FROM service_booking_items sbi
              JOIN service_offerings so ON sbi.service_id = so.id
              WHERE sbi.booking_id = $1`,
             [bookingId]
         );
 
         booking.services = servicesRes.rows;
-        booking.total_cost = servicesRes.rows.reduce((sum, item) => sum + parseFloat(item.price_starts_at), 0);
+        booking.total_cost = booking.total_amount != null 
+            ? parseFloat(booking.total_amount) 
+            : servicesRes.rows.reduce((sum, item) => sum + parseFloat(item.price_at_booking || item.price_starts_at || 0), 0);
 
         res.json({ booking });
+
     } catch (err) {
         console.error('Booking detail error:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -401,11 +454,90 @@ router.post('/payment/verify', requireAuth, async (req, res) => {
     }
 });
 
+// Haversine formula to compute distance in km
+function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
+// GET /api/portal/towing/nearest-shop
+router.get('/towing/nearest-shop', requireAuth, async (req, res) => {
+    try {
+        const { latitude, longitude } = req.query;
+        const shopsRes = await db.query(
+            'SELECT id, shop_name, phone_number, city, shop_address, latitude, longitude, base_towing_fee, per_km_towing_rate, max_towing_radius_km, towing_service_available FROM admin_profiles WHERE towing_service_available = true ORDER BY id ASC'
+        );
+
+        const allShops = shopsRes.rows;
+        if (allShops.length === 0) {
+            return res.status(404).json({ error: 'No workshops currently offer towing services.' });
+        }
+
+        const customerLat = latitude ? parseFloat(latitude) : null;
+        const customerLng = longitude ? parseFloat(longitude) : null;
+
+        let sortedShops = allShops.map(shop => {
+            let dist = null;
+            if (customerLat !== null && customerLng !== null && shop.latitude && shop.longitude) {
+                dist = calculateHaversineDistance(
+                    customerLat,
+                    customerLng,
+                    parseFloat(shop.latitude),
+                    parseFloat(shop.longitude)
+                );
+            }
+            const distanceKm = dist !== null ? Math.max(0.5, parseFloat(dist.toFixed(1))) : 4.5;
+            const baseFee = parseFloat(shop.base_towing_fee || 500);
+            const perKmRate = parseFloat(shop.per_km_towing_rate || 50);
+            const distanceCost = parseFloat((distanceKm * perKmRate).toFixed(2));
+            const estimatedCost = parseFloat((baseFee + distanceCost).toFixed(2));
+            const etaMinutes = Math.max(12, Math.round(distanceKm * 2.5) + 8);
+
+            return {
+                ...shop,
+                distance_km: distanceKm,
+                base_fee: baseFee,
+                per_km_rate: perKmRate,
+                distance_cost: distanceCost,
+                estimated_cost: estimatedCost,
+                eta_minutes: etaMinutes,
+            };
+        });
+
+        if (customerLat !== null && customerLng !== null) {
+            sortedShops.sort((a, b) => a.distance_km - b.distance_km);
+        }
+
+        const nearest = sortedShops[0];
+
+        res.json({
+            nearest_shop: nearest,
+            distance_km: nearest.distance_km,
+            base_fee: nearest.base_fee,
+            per_km_rate: nearest.per_km_rate,
+            distance_cost: nearest.distance_cost,
+            estimated_cost: nearest.estimated_cost,
+            eta_minutes: nearest.eta_minutes,
+            all_nearby_shops: sortedShops,
+        });
+    } catch (err) {
+        console.error('Nearest shop detection error:', err);
+        res.status(500).json({ error: 'Failed to calculate nearest towing shop' });
+    }
+});
+
 // POST /api/portal/towing
 router.post('/towing', requireAuth, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { full_name, phone_number, email, vehicle_details, pickup_address, latitude, longitude, otp } = req.body;
+        const { full_name, phone_number, email, vehicle_details, pickup_address, latitude, longitude, otp, payment_method } = req.body;
 
         if (!full_name || !phone_number || !email || !vehicle_details || !pickup_address || !otp) {
             return res.status(400).json({ error: 'Full name, phone number, email, vehicle details, pickup address, and OTP are required' });
@@ -429,18 +561,83 @@ router.post('/towing', requireAuth, async (req, res) => {
         // OTP is valid, delete it
         await db.query('DELETE FROM otp_verifications WHERE email = $1', [email]);
 
-        const shopRes = await db.query('SELECT select_shop_id FROM select_shops WHERE user_id = $1', [userId]);
-        const shopId = shopRes.rows.length > 0 ? shopRes.rows[0].select_shop_id : null;
-
-        const towingRes = await db.query(
-            `INSERT INTO towing_requests (user_id, shop_id, full_name, phone_number, email, vehicle_details, pickup_address, latitude, longitude, status, otp, otp_verified)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', '', true) RETURNING *`,
-            [userId, shopId, full_name, phone_number, email, vehicle_details, pickup_address, latitude || null, longitude || null]
+        // Find nearest store offering towing service
+        const shopsRes = await db.query(
+            'SELECT * FROM admin_profiles WHERE towing_service_available = true'
         );
 
+        let assignedShop = null;
+        let minDistance = Infinity;
+
+        const customerLat = latitude ? parseFloat(latitude) : null;
+        const customerLng = longitude ? parseFloat(longitude) : null;
+
+        if (customerLat !== null && customerLng !== null && shopsRes.rows.length > 0) {
+            for (const shop of shopsRes.rows) {
+                if (shop.latitude && shop.longitude) {
+                    const dist = calculateHaversineDistance(
+                        customerLat,
+                        customerLng,
+                        parseFloat(shop.latitude),
+                        parseFloat(shop.longitude)
+                    );
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        assignedShop = shop;
+                    }
+                }
+            }
+        }
+
+        // Fallback to select_shops or first shop if coordinates missing or distance couldn't be calculated
+        if (!assignedShop) {
+            const shopRes = await db.query('SELECT select_shop_id FROM select_shops WHERE user_id = $1', [userId]);
+            const shopId = shopRes.rows.length > 0 ? shopRes.rows[0].select_shop_id : null;
+            if (shopId) {
+                assignedShop = shopsRes.rows.find(s => s.id === shopId) || shopsRes.rows[0];
+            } else {
+                assignedShop = shopsRes.rows[0] || null;
+            }
+            minDistance = 3.5;
+        }
+
+        const shopId = assignedShop ? assignedShop.id : null;
+        const distanceKm = Math.max(0.5, parseFloat(minDistance.toFixed(1)));
+        const baseFee = parseFloat(assignedShop?.base_towing_fee || 500);
+        const perKmRate = parseFloat(assignedShop?.per_km_towing_rate || 50);
+        const distanceCost = parseFloat((distanceKm * perKmRate).toFixed(2));
+        const estimatedCost = parseFloat((baseFee + distanceCost).toFixed(2));
+
+        const towingRes = await db.query(
+            `INSERT INTO towing_requests (
+                user_id, shop_id, full_name, phone_number, email, vehicle_details,
+                pickup_address, latitude, longitude, status, otp, otp_verified,
+                distance_km, base_fee, per_km_rate, estimated_cost, payment_method, payment_status
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', '', true, $10, $11, $12, $13, $14, 'unpaid')
+             RETURNING *`,
+            [
+                userId, shopId, full_name, phone_number, email, vehicle_details,
+                pickup_address, latitude || null, longitude || null,
+                distanceKm, baseFee, perKmRate, estimatedCost, payment_method || 'cash'
+            ]
+        );
+
+        // Auto-save phone to user profile if user has none saved yet
+        if (userId && phone_number) {
+            await db.query(
+                "UPDATE users SET phone = $1 WHERE id = $2 AND (phone IS NULL OR phone = '')",
+                [phone_number, userId]
+            ).catch(() => {});
+        }
+
         res.status(201).json({
-            message: 'Towing request submitted successfully',
-            towing: towingRes.rows[0],
+            message: 'Towing request submitted successfully and dispatched to nearest workshop',
+            towing: {
+                ...towingRes.rows[0],
+                shop_name: assignedShop?.shop_name,
+                shop_phone: assignedShop?.phone_number,
+                shop_address: assignedShop?.shop_address,
+            },
         });
     } catch (err) {
         console.error('Towing request error:', err);
@@ -452,7 +649,8 @@ router.post('/towing', requireAuth, async (req, res) => {
 router.get('/towing/:id', requireAuth, async (req, res) => {
     try {
         const towingRes = await db.query(
-            `SELECT tr.*, ap.shop_name, ap.phone_number as shop_phone FROM towing_requests tr
+            `SELECT tr.*, ap.shop_name, ap.phone_number as shop_phone, ap.shop_address, ap.city as shop_city
+             FROM towing_requests tr
              LEFT JOIN admin_profiles ap ON tr.shop_id = ap.id
              WHERE tr.id = $1 AND tr.user_id = $2`,
             [req.params.id, req.user.id]
@@ -534,17 +732,25 @@ router.post('/towing/:id/verify-otp', requireAuth, async (req, res) => {
 
 
 // POST /api/portal/contact
-router.post('/contact', requireAuth, async (req, res) => {
+router.post('/contact', optionalAuth, async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user ? req.user.id : null;
         const { name, email, subject, message } = req.body;
 
         if (!name || !email || !subject || !message) {
             return res.status(400).json({ error: 'All fields are required' });
         }
 
-        const shopRes = await db.query('SELECT select_shop_id FROM select_shops WHERE user_id = $1', [userId]);
-        const shopId = shopRes.rows.length > 0 ? shopRes.rows[0].select_shop_id : null;
+        let shopId = null;
+        if (userId) {
+            const shopRes = await db.query('SELECT select_shop_id FROM select_shops WHERE user_id = $1', [userId]);
+            shopId = shopRes.rows.length > 0 ? shopRes.rows[0].select_shop_id : null;
+        }
+
+        if (!shopId) {
+            const firstShop = await db.query('SELECT id FROM admin_profiles ORDER BY id ASC LIMIT 1');
+            if (firstShop.rows.length > 0) shopId = firstShop.rows[0].id;
+        }
 
         await db.query(
             `INSERT INTO contact_messages (user_id, shop_id, name, email, subject, message, is_read)
@@ -559,4 +765,106 @@ router.post('/contact', requireAuth, async (req, res) => {
     }
 });
 
+// ==========================================
+// WORKSHOP REVIEWS & RATINGS (1-5 STARS)
+// ==========================================
+
+// POST /api/portal/reviews - Submit review for completed booking
+router.post('/reviews', requireAuth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { booking_id, rating, comment } = req.body;
+
+        if (!booking_id || !rating) {
+            return res.status(400).json({ error: 'Booking ID and star rating (1-5) are required' });
+        }
+
+        const ratingNum = parseInt(rating, 10);
+        if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+            return res.status(400).json({ error: 'Rating must be between 1 and 5 stars' });
+        }
+
+        // Verify booking belongs to this user and is completed
+        const bRes = await db.query(
+            'SELECT id, shop_id, status FROM service_bookings WHERE id = $1 AND user_id = $2',
+            [booking_id, userId]
+        );
+
+        if (bRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Service booking not found' });
+        }
+
+        const booking = bRes.rows[0];
+        if (booking.status !== 'completed') {
+            return res.status(400).json({ error: 'Only completed services can be reviewed' });
+        }
+
+        // Check if already reviewed
+        const existing = await db.query('SELECT id FROM workshop_reviews WHERE booking_id = $1', [booking_id]);
+        if (existing.rows.length > 0) {
+            return res.status(400).json({ error: 'You have already reviewed this service order' });
+        }
+
+        const newReview = await db.query(
+            `INSERT INTO workshop_reviews (user_id, shop_id, booking_id, rating, comment)
+             VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+            [userId, booking.shop_id, booking_id, ratingNum, (comment || '').trim()]
+        );
+
+        res.status(201).json({ message: 'Thank you for your rating & feedback!', review: newReview.rows[0] });
+    } catch (err) {
+        console.error('Submit review error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// GET /api/portal/reviews/booking/:bookingId - Check if booking was already reviewed
+router.get('/reviews/booking/:bookingId', requireAuth, async (req, res) => {
+    try {
+        const revRes = await db.query(
+            'SELECT * FROM workshop_reviews WHERE booking_id = $1 AND user_id = $2',
+            [req.params.bookingId, req.user.id]
+        );
+        res.json({ review: revRes.rows[0] || null });
+    } catch (err) {
+        console.error('Fetch booking review error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// GET /api/portal/shops/:shopId/reviews - Fetch public reviews and stats for workshop
+router.get('/shops/:shopId/reviews', optionalAuth, async (req, res) => {
+    try {
+        const shopId = req.params.shopId;
+        const reviewsRes = await db.query(
+            `SELECT wr.*, u.first_name, u.last_name, u.username
+             FROM workshop_reviews wr
+             JOIN users u ON wr.user_id = u.id
+             WHERE wr.shop_id = $1
+             ORDER BY wr.id DESC
+             LIMIT 25`,
+            [shopId]
+        );
+
+        const statsRes = await db.query(
+            `SELECT COALESCE(ROUND(AVG(rating)::numeric, 1), 0.0) as avg_rating,
+                    COUNT(id)::int as total_reviews
+             FROM workshop_reviews
+             WHERE shop_id = $1`,
+            [shopId]
+        );
+
+        res.json({
+            reviews: reviewsRes.rows,
+            avg_rating: parseFloat(statsRes.rows[0]?.avg_rating || 0),
+            total_reviews: statsRes.rows[0]?.total_reviews || 0
+        });
+    } catch (err) {
+        console.error('Fetch shop reviews error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 module.exports = router;
+
+

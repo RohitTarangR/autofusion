@@ -119,6 +119,7 @@ export default function ClientTowingOrders() {
                                     <th className="py-3 px-4">Vehicle Details</th>
                                     <th className="py-3 px-4">Pickup Location</th>
                                     <th className="py-3 px-4">Dispatch Hub</th>
+                                    <th className="py-3 px-4">Towing Cost</th>
                                     <th className="py-3 px-4">Requested Time</th>
                                     <th className="py-3 px-4">Status</th>
                                     <th className="py-3 px-4">Actions</th>
@@ -133,6 +134,7 @@ export default function ClientTowingOrders() {
                                             {t.pickup_address}
                                         </td>
                                         <td className="py-3 px-4 text-slate-600">{t.shop_name || 'Assigned Workshop'}</td>
+                                        <td className="py-3 px-4 font-black text-red-600">₹{parseFloat(t.estimated_cost || 0).toFixed(2)}</td>
                                         <td className="py-3 px-4 text-slate-600">{new Date(t.requested_at).toLocaleString()}</td>
                                         <td className="py-3 px-4"><StatusBadge status={t.status} /></td>
                                         <td className="py-3 px-4">

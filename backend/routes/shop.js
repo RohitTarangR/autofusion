@@ -119,29 +119,62 @@ router.get('/day-end-report', requireStaff, async (req, res) => {
 // PUT /api/shop/profile
 router.put('/profile', requireStaff, async (req, res) => {
     try {
-        const { full_name, shop_name, phone_number, city, shop_address, opening_time, closing_time, lunch_start_time, lunch_end_time } = req.body;
+        const {
+            full_name, shop_name, phone_number, city, shop_address,
+            opening_time, closing_time, lunch_start_time, lunch_end_time,
+            max_concurrent_bookings, slot_duration_minutes, closed_days,
+            base_towing_fee, per_km_towing_rate, max_towing_radius_km,
+            towing_service_available, latitude, longitude
+        } = req.body;
         const shop = await getShopProfile(req.user.id);
 
         if (shop) {
             await db.query(
                 `UPDATE admin_profiles
                  SET full_name = $1, shop_name = $2, phone_number = $3, city = $4, shop_address = $5,
-                     opening_time = $6, closing_time = $7, lunch_start_time = $8, lunch_end_time = $9
-                 WHERE id = $10`,
-                [full_name || '', shop_name, phone_number || '', city || '', shop_address || '',
-                 opening_time || '10:00:00', closing_time || '19:00:00', lunch_start_time || '13:00:00', lunch_end_time || '14:00:00',
-                 shop.id]
+                     opening_time = $6, closing_time = $7, lunch_start_time = $8, lunch_end_time = $9,
+                     max_concurrent_bookings = $10, slot_duration_minutes = $11, closed_days = $12,
+                     base_towing_fee = $13, per_km_towing_rate = $14, max_towing_radius_km = $15,
+                     towing_service_available = $16, latitude = $17, longitude = $18
+                 WHERE id = $19`,
+                [
+                    full_name || '', shop_name, phone_number || '', city || '', shop_address || '',
+                    opening_time || '10:00:00', closing_time || '19:00:00', lunch_start_time || '13:00:00', lunch_end_time || '14:00:00',
+                    parseInt(max_concurrent_bookings, 10) || 3, parseInt(slot_duration_minutes, 10) || 120, closed_days || 'Sunday',
+                    base_towing_fee !== undefined ? parseFloat(base_towing_fee) : 500.00,
+                    per_km_towing_rate !== undefined ? parseFloat(per_km_towing_rate) : 50.00,
+                    max_towing_radius_km !== undefined ? parseFloat(max_towing_radius_km) : 50.00,
+                    towing_service_available !== undefined ? Boolean(towing_service_available) : true,
+                    latitude ? parseFloat(latitude) : null,
+                    longitude ? parseFloat(longitude) : null,
+                    shop.id
+                ]
             );
         } else {
             await db.query(
-                `INSERT INTO admin_profiles (user_id, full_name, shop_name, phone_number, city, shop_address, opening_time, closing_time, lunch_start_time, lunch_end_time)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-                [req.user.id, full_name || '', shop_name, phone_number || '', city || '', shop_address || '',
-                 opening_time || '10:00:00', closing_time || '19:00:00', lunch_start_time || '13:00:00', lunch_end_time || '14:00:00']
+                `INSERT INTO admin_profiles (
+                    user_id, full_name, shop_name, phone_number, city, shop_address,
+                    opening_time, closing_time, lunch_start_time, lunch_end_time,
+                    max_concurrent_bookings, slot_duration_minutes, closed_days,
+                    base_towing_fee, per_km_towing_rate, max_towing_radius_km,
+                    towing_service_available, latitude, longitude
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+                [
+                    req.user.id, full_name || '', shop_name, phone_number || '', city || '', shop_address || '',
+                    opening_time || '10:00:00', closing_time || '19:00:00', lunch_start_time || '13:00:00', lunch_end_time || '14:00:00',
+                    parseInt(max_concurrent_bookings, 10) || 3, parseInt(slot_duration_minutes, 10) || 120, closed_days || 'Sunday',
+                    base_towing_fee !== undefined ? parseFloat(base_towing_fee) : 500.00,
+                    per_km_towing_rate !== undefined ? parseFloat(per_km_towing_rate) : 50.00,
+                    max_towing_radius_km !== undefined ? parseFloat(max_towing_radius_km) : 50.00,
+                    towing_service_available !== undefined ? Boolean(towing_service_available) : true,
+                    latitude ? parseFloat(latitude) : null,
+                    longitude ? parseFloat(longitude) : null
+                ]
             );
         }
 
         res.json({ message: 'Shop profile updated successfully' });
+
     } catch (err) {
         console.error('Shop profile update error:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -204,7 +237,11 @@ router.get('/service-orders', requireStaff, async (req, res) => {
         const shop = await getShopProfile(req.user.id);
         const bookingsRes = await db.query(
             `SELECT sb.*,
-                    COALESCE(json_agg(json_build_object('id', so.id, 'title', so.title, 'price_starts_at', so.price_starts_at)) FILTER (WHERE so.id IS NOT NULL), '[]') as services
+                    COALESCE(json_agg(json_build_object(
+                        'id', so.id, 
+                        'title', so.title, 
+                        'price_starts_at', COALESCE(sbi.price_at_booking, so.price_starts_at)
+                    )) FILTER (WHERE so.id IS NOT NULL), '[]') as services
              FROM service_bookings sb
              LEFT JOIN service_booking_items sbi ON sb.id = sbi.booking_id
              LEFT JOIN service_offerings so ON sbi.service_id = so.id
@@ -215,12 +252,15 @@ router.get('/service-orders', requireStaff, async (req, res) => {
         );
 
         const bookings = bookingsRes.rows.map(b => {
-            const cost = b.services.reduce((sum, s) => sum + parseFloat(s.price_starts_at || 0), 0);
+            const cost = b.total_amount != null 
+                ? parseFloat(b.total_amount) 
+                : b.services.reduce((sum, s) => sum + parseFloat(s.price_starts_at || 0), 0);
             return { ...b, total_cost: cost };
         });
         const counts = {
             total: bookings.length,
             pending: bookings.filter(b => b.status === 'pending').length,
+            confirmed: bookings.filter(b => b.status === 'confirmed').length,
             processing: bookings.filter(b => b.status === 'processing').length,
             completed: bookings.filter(b => b.status === 'completed').length,
             cancelled: bookings.filter(b => b.status === 'cancelled').length,
@@ -235,9 +275,10 @@ router.get('/service-orders', requireStaff, async (req, res) => {
 
 router.put('/service-orders/:id', requireStaff, async (req, res) => {
     try {
+        const shop = await getShopProfile(req.user.id);
         const { status, customer_name, customer_phone, customer_email, vehicle_info, is_paid, send_payment_link, detailed_status } = req.body;
 
-        const currentRes = await db.query('SELECT * FROM service_bookings WHERE id = $1', [req.params.id]);
+        const currentRes = await db.query('SELECT * FROM service_bookings WHERE id = $1 AND shop_id = $2', [req.params.id, shop.id]);
         if (currentRes.rows.length === 0) return res.status(404).json({ error: 'Booking not found' });
         const current = currentRes.rows[0];
 
@@ -258,7 +299,7 @@ router.put('/service-orders/:id', requireStaff, async (req, res) => {
         await db.query(
             `UPDATE service_bookings
              SET status = $1, customer_name = $2, customer_phone = $3, customer_email = $4, vehicle_info = $5, is_paid = $6, detailed_status = $7
-             WHERE id = $8`,
+             WHERE id = $8 AND shop_id = $9`,
             [
                 status !== undefined ? status : current.status,
                 customer_name !== undefined ? customer_name : current.customer_name,
@@ -267,13 +308,13 @@ router.put('/service-orders/:id', requireStaff, async (req, res) => {
                 vehicle_info !== undefined ? vehicle_info : current.vehicle_info,
                 is_paid !== undefined ? is_paid : current.is_paid,
                 detailed_status !== undefined ? detailed_status : current.detailed_status,
-                req.params.id
+                req.params.id,
+                shop.id
             ]
         );
 
         if (status === 'confirmed' && current.status !== 'confirmed') {
-            const shopProfile = await getShopProfile(req.user.id);
-            const shopName = shopProfile ? shopProfile.shop_name : 'Assigned AutoFusion Hub';
+            const shopName = shop ? shop.shop_name : 'Assigned AutoFusion Hub';
             const emailTarget = customer_email !== undefined ? customer_email : current.customer_email;
             sendServiceBookingEmail(
                 emailTarget, 
@@ -287,15 +328,15 @@ router.put('/service-orders/:id', requireStaff, async (req, res) => {
         if (send_payment_link && status === 'completed') {
             const emailTarget = customer_email !== undefined ? customer_email : current.customer_email;
             const nameTarget = customer_name !== undefined ? customer_name : current.customer_name;
-            // First fetch the total cost from the database, or just calculate it
-            const serviceRes = await db.query(
-                `SELECT SUM(so.price_starts_at) as total_cost 
-                 FROM service_offerings so
-                 JOIN service_bookings_services sbs ON so.id = sbs.service_id
-                 WHERE sbs.booking_id = $1`,
-                [req.params.id]
-            );
-            const totalCost = serviceRes.rows[0]?.total_cost || 0;
+            const totalCost = current.total_amount != null 
+                ? parseFloat(current.total_amount)
+                : (await db.query(
+                    `SELECT SUM(COALESCE(sbi.price_at_booking, so.price_starts_at)) as total_cost 
+                     FROM service_booking_items sbi
+                     JOIN service_offerings so ON so.id = sbi.service_id
+                     WHERE sbi.booking_id = $1`,
+                    [req.params.id]
+                )).rows[0]?.total_cost || 0;
             const { sendPaymentLinkEmail } = require('../utils/email');
             sendPaymentLinkEmail(emailTarget, req.params.id, totalCost, nameTarget).catch(e => console.error(e));
         }
@@ -331,9 +372,10 @@ router.get('/towing-orders', requireStaff, async (req, res) => {
 
 router.put('/towing-orders/:id', requireStaff, async (req, res) => {
     try {
+        const shop = await getShopProfile(req.user.id);
         const { status, full_name, phone_number, vehicle_details, pickup_address } = req.body;
         
-        const currentRes = await db.query('SELECT * FROM towing_requests WHERE id = $1', [req.params.id]);
+        const currentRes = await db.query('SELECT * FROM towing_requests WHERE id = $1 AND shop_id = $2', [req.params.id, shop.id]);
         if (currentRes.rows.length === 0) return res.status(404).json({ error: 'Towing request not found' });
         const current = currentRes.rows[0];
 
@@ -354,14 +396,15 @@ router.put('/towing-orders/:id', requireStaff, async (req, res) => {
         await db.query(
             `UPDATE towing_requests
              SET status = $1, full_name = $2, phone_number = $3, vehicle_details = $4, pickup_address = $5
-             WHERE id = $6`,
+             WHERE id = $6 AND shop_id = $7`,
             [
                 status !== undefined ? status : current.status,
                 full_name !== undefined ? full_name : current.full_name,
                 phone_number !== undefined ? phone_number : current.phone_number,
                 vehicle_details !== undefined ? vehicle_details : current.vehicle_details,
                 pickup_address !== undefined ? pickup_address : current.pickup_address,
-                req.params.id
+                req.params.id,
+                shop.id
             ]
         );
 
@@ -386,6 +429,7 @@ router.get('/messages', requireStaff, async (req, res) => {
 
         res.json({
             messages,
+            unread_count: unreadCount,
             stats: {
                 total_message: total,
                 read_message: readCount,
@@ -401,9 +445,11 @@ router.get('/messages', requireStaff, async (req, res) => {
 
 router.get('/messages/:id', requireStaff, async (req, res) => {
     try {
-        await db.query('UPDATE contact_messages SET is_read = true WHERE id = $1', [req.params.id]);
-        const messageRes = await db.query('SELECT * FROM contact_messages WHERE id = $1', [req.params.id]);
+        const shop = await getShopProfile(req.user.id);
+        await db.query('UPDATE contact_messages SET is_read = true WHERE id = $1 AND shop_id = $2', [req.params.id, shop.id]);
+        const messageRes = await db.query('SELECT * FROM contact_messages WHERE id = $1 AND shop_id = $2', [req.params.id, shop.id]);
 
+        if (messageRes.rows.length === 0) return res.status(404).json({ error: 'Message not found' });
         res.json({ message: messageRes.rows[0] });
     } catch (err) {
         console.error('Shop message detail error:', err);
@@ -411,10 +457,23 @@ router.get('/messages/:id', requireStaff, async (req, res) => {
     }
 });
 
+router.put('/messages/:id/read', requireStaff, async (req, res) => {
+    try {
+        const shop = await getShopProfile(req.user.id);
+        const result = await db.query('UPDATE contact_messages SET is_read = true WHERE id = $1 AND shop_id = $2', [req.params.id, shop.id]);
+        if (result.rowCount === 0) return res.status(404).json({ error: 'Message not found' });
+        res.json({ message: 'Message marked as read' });
+    } catch (err) {
+        console.error('Shop mark message read error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 router.put('/messages/:id', requireStaff, async (req, res) => {
     try {
+        const shop = await getShopProfile(req.user.id);
         const { is_read } = req.body;
-        await db.query('UPDATE contact_messages SET is_read = $1 WHERE id = $2', [is_read, req.params.id]);
+        await db.query('UPDATE contact_messages SET is_read = $1 WHERE id = $2 AND shop_id = $3', [is_read, req.params.id, shop.id]);
         res.json({ message: 'Message read status updated' });
     } catch (err) {
         console.error('Shop message update error:', err);
@@ -422,4 +481,17 @@ router.put('/messages/:id', requireStaff, async (req, res) => {
     }
 });
 
+router.delete('/messages/:id', requireStaff, async (req, res) => {
+    try {
+        const shop = await getShopProfile(req.user.id);
+        const result = await db.query('DELETE FROM contact_messages WHERE id = $1 AND shop_id = $2', [req.params.id, shop.id]);
+        if (result.rowCount === 0) return res.status(404).json({ error: 'Message not found' });
+        res.json({ message: 'Message deleted successfully' });
+    } catch (err) {
+        console.error('Shop delete message error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 module.exports = router;
+

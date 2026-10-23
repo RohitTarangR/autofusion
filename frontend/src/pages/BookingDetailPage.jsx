@@ -6,26 +6,41 @@ import StatusBadge from '../components/StatusBadge';
 import OtpModal from '../components/OtpModal';
 import StripePaymentModal from '../components/StripePaymentModal';
 import ConfirmModal from '../components/ConfirmModal';
+import InvoiceModal from '../components/InvoiceModal';
+import ReviewModal from '../components/ReviewModal';
 
 export default function BookingDetailPage() {
     const { id } = useParams();
     const navigate = useNavigate();
 
     const [booking, setBooking] = useState(null);
+    const [existingReview, setExistingReview] = useState(null);
     const [loading, setLoading] = useState(true);
     const [isStripeOpen, setIsStripeOpen] = useState(false);
     const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+    const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+    const [isReviewOpen, setIsReviewOpen] = useState(false);
 
     const fetchBooking = async () => {
         try {
             const res = await api.get(`/portal/bookings/${id}`);
             setBooking(res.data.booking);
+
+            if (res.data.booking?.status === 'completed') {
+                try {
+                    const revRes = await api.get(`/portal/reviews/booking/${id}`);
+                    setExistingReview(revRes.data?.review || null);
+                } catch (e) {
+                    // Ignore review fetch error
+                }
+            }
         } catch (err) {
             console.error('Fetch booking detail error:', err);
         } finally {
             setLoading(false);
         }
     };
+
 
     useEffect(() => {
         fetchBooking();
@@ -93,8 +108,34 @@ export default function BookingDetailPage() {
                     </Link>
                     <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Service Booking #{booking.id}</h1>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5 flex-wrap">
                     <StatusBadge status={booking.status} />
+
+                    {/* Tax Invoice Download */}
+                    <button
+                        onClick={() => setIsInvoiceOpen(true)}
+                        className="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 transition-colors inline-flex items-center gap-1.5 shadow-sm"
+                        title="Download official tax invoice"
+                    >
+                        <i className="fas fa-file-invoice"></i> Tax Invoice / PDF
+                    </button>
+
+                    {/* Rating and Review Button */}
+                    {booking.status === 'completed' && (
+                        existingReview ? (
+                            <span className="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold bg-amber-50 border border-amber-200 text-amber-800 inline-flex items-center gap-1.5">
+                                <i className="fas fa-star text-amber-500"></i> Rated {existingReview.rating}/5
+                            </span>
+                        ) : (
+                            <button
+                                onClick={() => setIsReviewOpen(true)}
+                                className="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white transition-colors inline-flex items-center gap-1.5 shadow-sm"
+                            >
+                                <i className="fas fa-star text-amber-200"></i> Rate Workshop
+                            </button>
+                        )
+                    )}
+
                     {['pending', 'confirmed'].includes(booking.status) && (
                         <button
                             onClick={handleCancel}
@@ -105,6 +146,7 @@ export default function BookingDetailPage() {
                     )}
                 </div>
             </div>
+
 
             {/* Detailed Status Live Update Banner */}
             {booking.detailed_status && (
@@ -236,6 +278,24 @@ export default function BookingDetailPage() {
                 confirmText="Cancel Booking"
                 confirmColor="red"
             />
+
+            {/* Official Tax Invoice Modal */}
+            {isInvoiceOpen && (
+                <InvoiceModal
+                    booking={booking}
+                    onClose={() => setIsInvoiceOpen(false)}
+                />
+            )}
+
+            {/* Workshop Review & Rating Modal */}
+            {isReviewOpen && (
+                <ReviewModal
+                    booking={booking}
+                    onClose={() => setIsReviewOpen(false)}
+                    onSuccess={fetchBooking}
+                />
+            )}
         </div>
     );
 }
+

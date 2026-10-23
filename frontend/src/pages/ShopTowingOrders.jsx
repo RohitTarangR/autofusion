@@ -123,6 +123,7 @@ export default function ShopTowingOrders() {
                                     <th className="py-3 px-4">Driver & Contact</th>
                                     <th className="py-3 px-4">Vehicle Details</th>
                                     <th className="py-3 px-4">Pickup Location & Map</th>
+                                    <th className="py-3 px-4">Towing Fee</th>
                                     <th className="py-3 px-4">Status</th>
                                     <th className="py-3 px-4">Update Status</th>
                                 </tr>
@@ -150,6 +151,10 @@ export default function ShopTowingOrders() {
                                                     <i className="fas fa-map-marked-alt"></i> View GPS Map
                                                 </a>
                                             )}
+                                        </td>
+                                        <td className="py-3 px-4">
+                                            <div className="font-black text-red-600">₹{parseFloat(t.estimated_cost || 0).toFixed(2)}</div>
+                                            <div className="text-[11px] text-slate-400 font-medium">({t.distance_km || 0} km away)</div>
                                         </td>
                                         <td className="py-3 px-4"><StatusBadge status={t.status} /></td>
                                         <td className="py-3 px-4">

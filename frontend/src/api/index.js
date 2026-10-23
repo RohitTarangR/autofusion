@@ -17,4 +17,20 @@ api.interceptors.request.use((config) => {
     return Promise.reject(error);
 });
 
+// Response interceptor to handle expired sessions (401)
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error.response && error.response.status === 401) {
+            localStorage.removeItem('autocare_token');
+            const publicPaths = ['/', '/login', '/signup', '/forget-password', '/reset-password', '/about', '/contact', '/services-info'];
+            if (!publicPaths.includes(window.location.pathname)) {
+                window.location.href = '/login';
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
 export default api;
+

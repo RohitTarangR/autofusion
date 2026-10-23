@@ -152,7 +152,51 @@ export default function TowingDetailPage() {
                         <div>
                             <span className="text-xs text-slate-400 block font-medium">Assigned Towing Hub</span>
                             <span className="font-semibold text-slate-900">{towing.shop_name || 'AutoFusion Central Dispatch'}</span>
+                            {towing.shop_phone && (
+                                <a href={`tel:${towing.shop_phone}`} className="text-xs text-blue-600 block mt-0.5 hover:underline font-semibold">
+                                    <i className="fas fa-phone mr-1"></i> {towing.shop_phone}
+                                </a>
+                            )}
+                            {towing.shop_address && (
+                                <span className="text-xs text-slate-500 block mt-0.5">
+                                    {towing.shop_address}
+                                </span>
+                            )}
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Towing Pricing & Invoice Card */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm mt-6">
+                <div className="flex justify-between items-center mb-5 flex-wrap gap-2">
+                    <h3 className="text-lg font-bold text-slate-900 flex items-center">
+                        <i className="fas fa-file-invoice-dollar text-red-500 mr-2"></i>
+                        Towing Cost & Payment Breakdown
+                    </h3>
+                    <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
+                        Method: {towing.payment_method === 'cash' ? 'Pay Driver on Arrival' : 'Online Invoice'}
+                    </span>
+                </div>
+
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-2 text-sm">
+                    <div className="flex justify-between items-center text-slate-600">
+                        <span>Base Hookup / Dispatch Fee:</span>
+                        <span className="font-semibold text-slate-800">₹{parseFloat(towing.base_fee || 500).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-600">
+                        <span>
+                            Distance Charge ({towing.distance_km || 0} km @ ₹{towing.per_km_rate || 50}/km):
+                        </span>
+                        <span className="font-semibold text-slate-800">
+                            ₹{(parseFloat(towing.distance_km || 0) * parseFloat(towing.per_km_rate || 50)).toFixed(2)}
+                        </span>
+                    </div>
+                    <div className="pt-3 border-t border-slate-200 flex justify-between items-center">
+                        <span className="font-extrabold text-base text-slate-900">Total Towing Amount:</span>
+                        <span className="text-2xl font-black text-red-600">
+                            ₹{parseFloat(towing.estimated_cost || 0).toFixed(2)}
+                        </span>
                     </div>
                 </div>
             </div>
